@@ -48,6 +48,7 @@ require an explicitly named job id.
 
 ## Docs
 
+- `UBUNTU-TESTING.md` — Phase 02: install gates + manual test plan for the Ubuntu machine (nothing runs automatically)
 - `plan.md` — scope, verified host facts, design invariants
 - `hermes-cron-operations-feasibility-report.md` — original feasibility study
 - `prompt.md` — requirements for this iteration
