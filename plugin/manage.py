@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from typing import Any, Optional
+from typing import Any
 
 _MUTATION_VERBS = {"pause": "pause", "resume": "resume", "delete": "remove"}
 

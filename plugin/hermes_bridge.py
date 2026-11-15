@@ -55,7 +55,7 @@ def find_job(job_id: str, profile_name: Optional[str] = None):
     for profile in profiles:
         try:
             jobs = load_jobs(profile)
-        except Exception as exc:
+        except Exception:
             continue  # broken store: report via doctor, not here
         for job in jobs:
             if str(job.get("id")) == job_id:

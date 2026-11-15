@@ -1,7 +1,6 @@
 """`hermes cronops` — argparse tree and dispatcher.
 
-Implemented: `list`, `metrics`, `history`. The rest exist so the CLI surface is
-stable and print "not implemented" (exit 0).
+All nine subcommands are implemented; `--json` on every one of them.
 """
 
 from __future__ import annotations
@@ -64,8 +63,7 @@ def command(args: argparse.Namespace) -> int:
         return _cmd_doctor(args)
     if action in ("inspect", "pause", "resume", "delete"):
         return _cmd_manage(args, action)
-    print(f"cronops {action}: not implemented yet (phase 01)")
-    return 0
+    return 0  # argparse rejected anything unknown; belt-and-braces
 
 
 def _cmd_manage(args: argparse.Namespace, action: str) -> int:
@@ -177,8 +175,8 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         return 1
     if getattr(args, "json_out", False):
         print(json.dumps(result, indent=2))
-        return 0
-    _print_validate(result)
+    else:
+        _print_validate(result)
     return 1 if any(c["level"] == "overlap" for c in result["conflicts"]) else 0
 
 
