@@ -29,7 +29,15 @@ def setup_cli(subparser: argparse.ArgumentParser) -> None:
         p.add_argument("--json", action="store_true", dest="json_out",
                        help="Machine-readable output")
 
-    for name in ("validate", "inspect", "pause", "resume", "delete", "doctor"):
+    p_val = subs.add_parser(
+        "validate", help="Check a cron expression against every job in every profile")
+    p_val.add_argument("expr", help='Cron expression, e.g. "0 9 * * *"')
+    p_val.add_argument("--profile", help="Profile whose timezone interprets the expression")
+    p_val.add_argument("--at", help="Pin 'now' as an ISO timestamp (deterministic checks)")
+    p_val.add_argument("--json", action="store_true", dest="json_out",
+                       help="Machine-readable output")
+
+    for name in ("inspect", "pause", "resume", "delete", "doctor"):
         p = subs.add_parser(name, help=f"{name} (not implemented yet)")
         p.add_argument("--json", action="store_true", dest="json_out",
                        help="Machine-readable output")
@@ -44,8 +52,79 @@ def command(args: argparse.Namespace) -> int:
         return _cmd_list(args)
     if action in ("metrics", "history"):
         return _cmd_runs(args, action)
+    if action == "validate":
+        return _cmd_validate(args)
     print(f"cronops {action}: not implemented yet (phase 01)")
     return 0
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    from datetime import datetime
+
+    from hermes_time import now as hermes_now
+
+    from . import hermes_bridge, validate as validate_mod
+
+    profiles, error = hermes_bridge.resolve_profiles(None)
+    if error:
+        print(error)
+        return 1
+    candidate = None
+    if getattr(args, "profile", None):
+        candidates, error = hermes_bridge.resolve_profiles(args.profile)
+        if error:
+            print(error)
+            return 1
+        candidate = candidates[0]  # timezone interpreter only; comparison stays cross-profile
+    at = hermes_now()
+    if getattr(args, "at", None):
+        try:
+            at = datetime.fromisoformat(args.at.replace("Z", "+00:00"))
+            if at.tzinfo is None:
+                at = at.astimezone()
+        except ValueError:
+            print(f"invalid --at timestamp: {args.at}")
+            return 1
+    try:
+        result = validate_mod.validate(args.expr, profiles, candidate, at)
+    except ValueError as exc:
+        print(f"invalid expression '{args.expr}': {exc}")
+        return 1
+    if getattr(args, "json_out", False):
+        print(json.dumps(result, indent=2))
+        return 0
+    _print_validate(result)
+    return 1 if any(c["level"] == "overlap" for c in result["conflicts"]) else 0
+
+
+def _print_validate(result: dict) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    console.print(f"Expression: [bold]{result['expr']}[/bold]  "
+                  f"(profile: {result['candidate_profile'] or 'active'})")
+    console.print("Next runs: " + ", ".join(result["occurrences"]))
+    conflicts = result["conflicts"]
+    if conflicts:
+        table = Table(show_header=True, header_style="bold")
+        for column in ("Level", "Job", "Profile", "Candidate", "Existing job", "Gap"):
+            table.add_column(column)
+        for rec in conflicts:
+            style = "red" if rec["level"] == "overlap" else "yellow"
+            table.add_row(f"[{style}]{rec['level']}[/{style}]", rec["name"], rec["profile"],
+                          rec["candidate_at"], rec["job_at"], f"{rec['gap_minutes']} min")
+        console.print(table)
+    else:
+        console.print("[green]No conflicts.[/green]")
+    for rec in result["context"]:
+        console.print(f"  context (script job): {rec['name']} ({rec['profile']}) "
+                      f"at {rec['job_at']}, {rec['gap_minutes']} min away")
+    if result.get("recommendation"):
+        console.print(f"Nearest free slot: [cyan]{result['recommendation']}[/cyan]")
+    if result.get("catch_up_missed"):
+        console.print("note: cron.catch_up_missed is on — missed occurrences fire once late "
+                      "(report-only; use `hermes cron edit` to change)")
 
 
 def _cmd_list(args: argparse.Namespace) -> int:

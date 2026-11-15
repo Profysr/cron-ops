@@ -1,12 +1,27 @@
 """Thin wrappers over Hermes internals — the only sanctioned way this plugin reads state.
 
-No direct file reads: profiles come from ``hermes_cli.profiles``, jobs from ``cron.jobs``
-(routed per profile via ``use_cron_store``), exactly as ``hermes cron list`` does.
+No direct file reads: profiles come from ``hermes_cli.profiles``, jobs from ``cron.jobs``,
+executions from ``cron.executions``, exactly as ``hermes cron list`` / ``hermes cron runs`` do.
 """
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
+
+
+@contextmanager
+def use_profile(profile):
+    """Route every home-derived store (``jobs.json``, ``executions.db``, ``config.yaml``,
+    timezone) to *profile* for the duration — the same redirect ``hermes -p <profile>``
+    performs, via the context-local override the gateway itself uses."""
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    token = set_hermes_home_override(profile.path)
+    try:
+        yield
+    finally:
+        reset_hermes_home_override(token)
 
 
 def resolve_profiles(name: Optional[str] = None):
@@ -27,7 +42,7 @@ def load_jobs(profile):
     """Every job in *profile*'s store (disabled included); a missing store yields ``[]``."""
     from cron.jobs import list_jobs, use_cron_store
 
-    with use_cron_store(profile.path):
+    with use_profile(profile), use_cron_store(profile.path):
         return list_jobs(include_disabled=True)
 
 

@@ -89,7 +89,10 @@ def last_executions(profile, job_id: str, limit: int = 10,
     """Newest-first runs of *job_id*, enriched with tokens/model when an audit line matches."""
     from cron.executions import list_executions
 
-    execs = list_executions(job_id=job_id, limit=limit)
+    from . import hermes_bridge
+
+    with hermes_bridge.use_profile(profile):
+        execs = list_executions(job_id=job_id, limit=limit)
     usage = _usage_records(profile, job_id)
     used: set[int] = set()
 
