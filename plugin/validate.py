@@ -110,7 +110,7 @@ def job_occurrences(job: dict, zone, at: datetime, count: int = CANDIDATE_RUNS) 
         if run_at is None:
             return []
         if run_at.tzinfo is None:
-            run_at = run_at.replace(tzinfo=at.tzinfo)  # naive stored value: schedule zone
+            run_at = run_at.replace(tzinfo=zone or at.tzinfo)  # naive stored value: schedule zone
         return [run_at.astimezone(timezone.utc)] if run_at > at else []
     return []
 
