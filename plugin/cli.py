@@ -37,10 +37,16 @@ def setup_cli(subparser: argparse.ArgumentParser) -> None:
     p_val.add_argument("--json", action="store_true", dest="json_out",
                        help="Machine-readable output")
 
-    for name in ("inspect", "pause", "resume", "delete", "doctor"):
-        p = subs.add_parser(name, help=f"{name} (not implemented yet)")
+    for name in ("inspect", "pause", "resume", "delete"):
+        p = subs.add_parser(name, help=f"{name} a job across profiles")
+        p.add_argument("job_id", help="Job id (see `cronops list`)")
+        p.add_argument("--profile", help="Only this profile (default: search all)")
         p.add_argument("--json", action="store_true", dest="json_out",
                        help="Machine-readable output")
+
+    subs.add_parser("doctor", help="Health sweep across all profiles"
+                    ).add_argument("--json", action="store_true", dest="json_out",
+                                   help="Machine-readable output")
 
 
 def command(args: argparse.Namespace) -> int:
@@ -54,8 +60,87 @@ def command(args: argparse.Namespace) -> int:
         return _cmd_runs(args, action)
     if action == "validate":
         return _cmd_validate(args)
+    if action == "doctor":
+        return _cmd_doctor(args)
+    if action in ("inspect", "pause", "resume", "delete"):
+        return _cmd_manage(args, action)
     print(f"cronops {action}: not implemented yet (phase 01)")
     return 0
+
+
+def _cmd_manage(args: argparse.Namespace, action: str) -> int:
+    from . import hermes_bridge, manage
+
+    profile, job, error = hermes_bridge.find_job(
+        args.job_id, getattr(args, "profile", None))
+    if error:
+        print(error)
+        return 1
+    if action == "inspect":
+        result = manage.inspect(profile, job)
+        if getattr(args, "json_out", False):
+            print(json.dumps(result, indent=2))
+        else:
+            _print_inspect(result)
+        return 0
+    result = manage.mutate(action, args.job_id, profile)
+    if getattr(args, "json_out", False):
+        print(json.dumps(result, indent=2))
+    else:
+        mark = "✓" if result["ok"] else "✗"
+        print(f"{mark} {action} {args.job_id} ({result['profile']})")
+        if result["hermes_output"]:
+            print(result["hermes_output"])
+    return 0 if result["ok"] else 1
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from . import hermes_bridge, manage
+
+    profiles, error = hermes_bridge.resolve_profiles(None)
+    if error:
+        print(error)
+        return 1
+    report = manage.doctor(profiles)
+    if getattr(args, "json_out", False):
+        print(json.dumps(report, indent=2))
+        return 0 if report["healthy"] else 1
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    if report["healthy"]:
+        console.print(f"[green]healthy[/green] — {report['jobs']} jobs across "
+                      f"{len(report['profiles'])} profiles, no findings")
+        return 0
+    table = Table(show_header=True, header_style="bold")
+    for column in ("Type", "Profile", "Job", "Detail"):
+        table.add_column(column)
+    for finding in report["findings"]:
+        table.add_row(finding["type"], finding.get("profile", "-"),
+                      finding.get("job_id", "-"), finding["detail"])
+    console.print(table)
+    return 1
+
+
+def _print_inspect(row: dict) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(show_header=False)
+    table.add_column("Field", style="bold")
+    table.add_column("Value")
+    for key in ("id", "name", "profile", "schedule", "model", "execution_type", "status",
+                "next_run_at", "last_run_at", "last_status", "failure_streak",
+                "last_error", "deliver", "timezone"):
+        value = row.get(key)
+        if value not in (None, "", 0, "?"):
+            table.add_row(key, str(value))
+    Console().print(table)
+    last = row.get("last_run")
+    if last:
+        Console().print(f"Last run: {last['id']} {last['status']} "
+                        f"at {last['claimed_at']} ({last['complexity']})")
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:

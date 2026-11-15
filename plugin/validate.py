@@ -106,7 +106,7 @@ def window_gap(a0: datetime, a1: datetime, b0: datetime, b1: datetime) -> Option
     return (b0 - a1) if b0 >= a1 else (a0 - b1)
 
 
-def _catch_up_missed(profile) -> bool:
+def _catch_up_missed() -> bool:
     """Global ``cron.catch_up_missed`` (default true) — report-only, never modified."""
     try:
         from hermes_cli.config import load_config
@@ -224,8 +224,15 @@ def _recommend(first: datetime, cand_dur: timedelta, existing) -> Optional[str]:
         offsets.append(-k * STEP)
     for off in offsets:
         slot = first + off
-        if all(window_gap(slot, slot + cand_dur, o, o + dur) is not None
-               and window_gap(slot, slot + cand_dur, o, o + dur) > WARN_WINDOW
-               for _, _, occ, dur in existing for o in occ):
+        free = True
+        for _, _, occ, dur in existing:
+            for o in occ:
+                gap = window_gap(slot, slot + cand_dur, o, o + dur)
+                if gap is None or gap <= WARN_WINDOW:
+                    free = False
+                    break
+            if not free:
+                break
+        if free:
             return slot.isoformat()
     return None
