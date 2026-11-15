@@ -1,0 +1,7 @@
+name: cron-ops
+version: 0.1.0
+description: "Centralized cron operations across all Hermes profiles: inventory, schedule validation, execution metrics, and cross-profile management."
+author: local
+python_dependencies:
+  - rich
+  - croniter
