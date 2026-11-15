@@ -20,7 +20,7 @@ def inspect(profile, job: dict) -> dict[str, Any]:
 
     row = inventory.normalize(job, profile.name)
     rows = metrics.last_executions(
-        profile, row["id"], limit=1, no_agent=bool(job.get("no_agent")))
+        profile, row["id"], limit=1, no_agent=bool(job.get("no_agent")))["runs"]
     row["next_run_at"] = job.get("next_run_at")
     row["last_run_at"] = job.get("last_run_at")
     row["last_status"] = job.get("last_status")

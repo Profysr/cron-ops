@@ -237,18 +237,21 @@ def _cmd_runs(args: argparse.Namespace, action: str) -> int:
         return 1
     no_agent = bool(job.get("no_agent"))
     limit = max(1, min(getattr(args, "limit", 10), 500))
-    rows = metrics.last_executions(profile, args.job_id, limit=limit, no_agent=no_agent)
+    result = metrics.last_executions(profile, args.job_id, limit=limit, no_agent=no_agent)
+    runs, unmatched = result["runs"], result["unmatched_usage_records"]
 
     if getattr(args, "json_out", False):
         if action == "metrics":
-            print(json.dumps(metrics.summarize(rows, no_agent=no_agent), indent=2))
+            print(json.dumps(metrics.summarize(runs, no_agent=no_agent,
+                                               unmatched_usage_records=unmatched), indent=2))
         else:
-            print(json.dumps(rows, indent=2))
+            print(json.dumps(result, indent=2))
         return 0
     if action == "metrics":
-        _print_metrics(metrics.summarize(rows, no_agent=no_agent))
+        _print_metrics(metrics.summarize(runs, no_agent=no_agent,
+                                         unmatched_usage_records=unmatched))
     else:
-        _print_history(rows)
+        _print_history(runs, unmatched)
     return 0
 
 
@@ -268,31 +271,41 @@ def _print_metrics(summary: dict) -> None:
     table.add_row("Avg duration", _fmt_ms(summary.get("avg_duration_ms")))
     table.add_row("Models", ", ".join(summary.get("models") or []) or "unknown")
     table.add_row("Complexity", summary.get("complexity", "unknown"))
+    if summary.get("unmatched_usage_records"):
+        table.add_row("Unmatched usage",
+                      f"{summary['unmatched_usage_records']} record(s) not attributed to these runs")
     table.add_row("CPU / RAM", "unknown (v1)")
     Console().print(table)
 
 
-def _print_history(rows: list[dict]) -> None:
+def _print_history(rows: list[dict], unmatched: int = 0) -> None:
     from rich.console import Console
     from rich.table import Table
 
     if not rows:
         print("No execution attempts recorded.")
-        return
-    table = Table(show_header=True, header_style="bold")
-    for column in ("Run ID", "Status", "Claimed", "Duration", "Tokens", "Model",
-                   "Delivery", "Complexity"):
-        table.add_column(column)
-    for row in rows:
-        table.add_row(
-            row["id"], row["status"], row["claimed_at"],
-            _fmt_ms(row["duration_ms"]), str(row["total_tokens"] or "unknown"),
-            row["model"] or "unknown", str(row["delivery_outcome"] or "-"),
-            row["complexity"],
-        )
-        if row.get("error"):
-            table.add_row("", f"[red]{row['error']}[/red]", "", "", "", "", "", "")
-    Console().print(table)
+    else:
+        table = Table(show_header=True, header_style="bold")
+        for column in ("Run ID", "Status", "Claimed", "Duration", "Tokens", "Usage",
+                       "Model", "Delivery", "Complexity"):
+            table.add_column(column)
+        for row in rows:
+            um = row.get("usage_match")
+            usage = f"{um['confidence']} ({um['delta_s']}s)" if um else "-"
+            tokens = (str(row["total_tokens"]) if row["total_tokens"] is not None
+                      else "unknown")
+            table.add_row(
+                row["id"], row["status"], row["claimed_at"],
+                _fmt_ms(row["duration_ms"]), tokens, usage,
+                row["model"] or "unknown", str(row["delivery_outcome"] or "-"),
+                row["complexity"],
+            )
+            if row.get("error"):
+                table.add_row("", f"[red]{row['error']}[/red]", "", "", "", "", "", "", "")
+        Console().print(table)
+    if unmatched:
+        print(f"note: {unmatched} usage record(s) matched no run in this window "
+              "(outside --limit, or unparsable)")
 
 
 def _fmt_ms(ms) -> str:

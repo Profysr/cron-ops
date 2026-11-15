@@ -8,6 +8,9 @@ Rules (plan.md Chunk 4):
   ``interval`` jobs use plain timedelta arithmetic; ``once`` jobs contribute their ``run_at``.
 - everything compared as UTC instants; display stays in the job's/profile's local zone.
 - **overlap** = execution windows actually intersect; **warning** = windows within ±45 min.
+- occurrences: candidate and jobs each start at 3 runs, then expand to a *common horizon*
+  (capped) — a fixed 3×3 comparison misses frequency-mismatched pairs (a ``*/5`` candidate
+  vs a daily job fires together daily but shares no near-term occurrence).
 - durations: recent p50 per job from the executions ledger (default 10 min when unknown);
   the candidate (no history yet) is assumed 10 min.
 - no-agent (script) jobs never *cause* a conflict — reported as context only.
@@ -25,6 +28,10 @@ WARN_WINDOW = timedelta(minutes=45)
 DEFAULT_DURATION = timedelta(minutes=10)
 STEP = timedelta(minutes=5)
 CANDIDATE_RUNS = 3  # occurrences of the candidate expanded for comparison
+# shortcut: schedule expansion is capped here (~3.5 days of every-minute jobs); rarer
+# pairs (e.g. weekly candidate vs sub-5-min jobs) past the cap can be missed — raise
+# only if such a pair is a real use case, croniter cost scales linearly.
+_MAX_OCCURRENCES = 5000
 
 
 def _parse(ts: Any) -> Optional[datetime]:
@@ -39,9 +46,11 @@ def _parse(ts: Any) -> Optional[datetime]:
 def cron_occurrences(expr: str, start: datetime, zone, count: int = CANDIDATE_RUNS):
     """Next *count* UTC instants of *expr* after *start*, rendered as *zone*'s wall clock.
 
-    Mirrors ``cron.jobs.compute_next_run``'s croniter handling (naive wall clock in the
-    configured zone, zone re-attached after); DST fold ambiguity is tolerated here because
-    the ±45 min conflict window dwarfs the one-hour fold.
+    Mirrors ``cron.jobs.compute_next_run``'s wall-clock handling *and* its DST fall-back
+    resolution (``jobs.py:1249-1256``): each candidate wall clock is tried at fold 0 then
+    fold 1, keeping the first instant strictly after the previous one — attaching fold 0
+    alone resolves a repeated autumn hour to its earlier pass and can emit an instant in
+    the past (core guards against exactly that, qwen-code#11723 class).
     Raises ``croniter``'s error on a malformed expression.
     """
     from croniter import croniter
@@ -50,9 +59,23 @@ def cron_occurrences(expr: str, start: datetime, zone, count: int = CANDIDATE_RU
     base = start.astimezone(zone).replace(tzinfo=None)
     it = croniter(expr, base)
     out = []
+    prev_ts = start.timestamp()
     for _ in range(count):
         wall = it.get_next(datetime)
-        out.append(wall.replace(tzinfo=zone).astimezone(timezone.utc))
+        picked = None
+        for _ in range(2):  # both folds, then next wall — core's order (jobs.py:1251-1256)
+            for fold in (0, 1):
+                cand = wall.replace(tzinfo=zone, fold=fold)
+                if cand.timestamp() > prev_ts:
+                    picked = cand
+                    break
+            if picked is not None:
+                break
+            wall = it.get_next(datetime)
+        if picked is None:
+            break
+        out.append(picked.astimezone(timezone.utc))
+        prev_ts = picked.timestamp()
     return out
 
 
@@ -84,7 +107,11 @@ def job_occurrences(job: dict, zone, at: datetime, count: int = CANDIDATE_RUNS) 
         return interval_occurrences(int(minutes), at, anchor, count)
     if kind == "once":
         run_at = _parse(sched.get("run_at"))
-        return [run_at.astimezone(timezone.utc)] if run_at and run_at > at else []
+        if run_at is None:
+            return []
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=at.tzinfo)  # naive stored value: schedule zone
+        return [run_at.astimezone(timezone.utc)] if run_at > at else []
     return []
 
 
@@ -92,11 +119,24 @@ def estimate_duration(profile, job_id: str) -> Optional[int]:
     """Recent p50 run duration in ms from the executions ledger; ``None`` when unknown."""
     from . import metrics
 
-    rows = metrics.last_executions(profile, job_id, limit=10)
+    rows = metrics.last_executions(profile, job_id, limit=10)["runs"]
     durations = sorted(r["duration_ms"] for r in rows if r["duration_ms"] is not None)
     if not durations:
         return None
     return durations[len(durations) // 2]
+
+
+def _expand(fn, target: datetime, out: list[datetime], count: int) -> list[datetime]:
+    """Grow *out* until its last instant reaches *target*, calling ``fn(count)`` for a
+    fresh, longer list each time (×4 growth). Stops when the schedule yields no more
+    (``once`` jobs) or the count cap is hit."""
+    while out and out[-1] < target and count < _MAX_OCCURRENCES:
+        count = min(count * 4, _MAX_OCCURRENCES)
+        new = fn(count)
+        if len(new) == len(out):
+            break
+        out = new
+    return out
 
 
 def window_gap(a0: datetime, a1: datetime, b0: datetime, b1: datetime) -> Optional[timedelta]:
@@ -138,6 +178,8 @@ def validate(expr: str, profiles, candidate_profile, at: datetime) -> dict[str, 
     context: list[dict] = []
     existing: list[tuple[Any, dict, list[datetime], int]] = []  # for the recommendation
 
+    # Phase 1: collect comparable jobs (schedules expanded in phase 2).
+    entries: list[dict] = []
     for profile in profiles:
         with hermes_bridge.use_profile(profile):
             profile_zone = get_timezone()
@@ -159,51 +201,82 @@ def validate(expr: str, profiles, candidate_profile, at: datetime) -> dict[str, 
             if not occ:
                 continue
             dur = estimate_duration(profile, str(job.get("id"))) or DEFAULT_DURATION
-            info = {"job_id": str(job.get("id")), "name": str(job.get("name") or "?"),
-                    "profile": profile.name}
+            entries.append({
+                "profile": profile, "job": job, "zone": zone, "dur": dur, "occ": occ,
+                "info": {"job_id": str(job.get("id")), "name": str(job.get("name") or "?"),
+                         "profile": profile.name},
+                "no_agent": bool(job.get("no_agent")),
+            })
 
-            if job.get("no_agent"):
-                # Script jobs: context only, never a conflict cause.
-                for c in occurrences:
-                    for o in occ:
-                        gap = window_gap(c, c + cand_dur, o, o + dur)
-                        if gap is not None and gap <= WARN_WINDOW:
-                            context.append({**info, "job_at": o.isoformat(),
-                                            "gap_minutes": round(gap.total_seconds() / 60, 1)})
-                            break
-                    else:
-                        continue
-                    break
-                continue
+    # Phase 2: grow every schedule to the common horizon — 3 fixed runs each side misses
+    # frequency-mismatched pairs (see module docstring); capped, see _MAX_OCCURRENCES.
+    if entries:
+        target = occurrences[-1]
+        for e in entries:
+            if e["occ"][-1] > target:
+                target = e["occ"][-1]
+        try:
+            occurrences = _expand(
+                lambda n: cron_occurrences(expr, at, cand_zone or at.tzinfo, n),
+                target, occurrences, CANDIDATE_RUNS)
+        except ValueError:
+            pass  # candidate cannot reach the horizon (e.g. leap-day expr): keep the 3-run preview
+        for e in entries:
+            try:
+                e["occ"] = _expand(
+                    lambda n, e=e: job_occurrences(e["job"], e["zone"], at, n),
+                    target, e["occ"], CANDIDATE_RUNS)
+            except Exception:
+                e["occ"] = []  # unusable schedule — doctor reports it, not validate
+        entries = [e for e in entries if e["occ"]]
 
-            existing.append((profile, job, occ, dur))
+    # Phase 3: conflicts, script-job context, recommendation input.
+    for e in entries:
+        profile, job, occ, dur, info = (e["profile"], e["job"], e["occ"],
+                                        e["dur"], e["info"])
+
+        if e["no_agent"]:
+            # Script jobs: context only, never a conflict cause.
             for c in occurrences:
                 for o in occ:
                     gap = window_gap(c, c + cand_dur, o, o + dur)
-                    if gap is None:
-                        level = "overlap"
-                    elif gap <= WARN_WINDOW:
-                        level = "warning"
-                    else:
-                        continue
-                    key = (profile.name, info["job_id"])
-                    prev = conflicts.get(key)
-                    score = -1 if gap is None else gap.total_seconds()
-                    if prev is None or score < prev["_score"]:
-                        conflicts[key] = {
-                            **info, "level": level,
-                            "candidate_at": c.isoformat(), "job_at": o.isoformat(),
-                            "gap_minutes": (0.0 if gap is None
-                                            else round(gap.total_seconds() / 60, 1)),
-                            "_score": score,
-                        }
-                    break  # nearest pair per (candidate run, job) is enough
+                    if gap is not None and gap <= WARN_WINDOW:
+                        context.append({**info, "job_at": o.isoformat(),
+                                        "gap_minutes": round(gap.total_seconds() / 60, 1)})
+                        break
+                else:
+                    continue
+                break
+            continue
+
+        existing.append((profile, job, occ, dur))
+        for c in occurrences:
+            for o in occ:
+                gap = window_gap(c, c + cand_dur, o, o + dur)
+                if gap is None:
+                    level = "overlap"
+                elif gap <= WARN_WINDOW:
+                    level = "warning"
+                else:
+                    continue
+                key = (profile.name, info["job_id"])
+                prev = conflicts.get(key)
+                score = -1 if gap is None else gap.total_seconds()
+                if prev is None or score < prev["_score"]:
+                    conflicts[key] = {
+                        **info, "level": level,
+                        "candidate_at": c.isoformat(), "job_at": o.isoformat(),
+                        "gap_minutes": (0.0 if gap is None
+                                        else round(gap.total_seconds() / 60, 1)),
+                        "_score": score,
+                    }
+                break  # nearest pair per (candidate run, job) is enough
 
     result = {
         "expr": expr,
         "at": at.isoformat(),
         "candidate_profile": candidate_profile.name if candidate_profile else None,
-        "occurrences": [c.isoformat() for c in occurrences],
+        "occurrences": [c.isoformat() for c in occurrences[:CANDIDATE_RUNS]],
         "conflicts": sorted((c for c in conflicts.values()),
                             key=lambda r: (r["level"] != "overlap", r["gap_minutes"])),
         "context": context,
