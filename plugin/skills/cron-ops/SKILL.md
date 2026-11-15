@@ -51,7 +51,9 @@ hermes cronops list                 # every job in every profile
 hermes cronops list --json          # same, machine-readable
 hermes cronops doctor               # findings → exit 1 (usable in CI)
 hermes cronops metrics <job-id>     # runs, tokens, duration, complexity
-hermes cronops history <job-id>     # last 10 runs with status/delivery
+hermes cronops history <job-id>     # last 10 runs with status/delivery; each row's
+                                    # usage_match is exact/heuristic (or null), and
+                                    # unmatched usage records are counted explicitly
 hermes cronops inspect <job-id>     # one job, full detail
 ```
 
