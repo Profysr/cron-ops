@@ -31,7 +31,7 @@ plugin/
   manage.py            # inspect + mutations (shells out to `hermes cron ...`)
   skills/                # bundled agent skills: cron-ops (cronops CLI),
                          # cron-job-creation, cron-job-standards,
-                         # cron-pitfalls, cron-output-formatting
+                         # cron-pitfalls, cron-output-formatter
 ```
 
 ## Design rules

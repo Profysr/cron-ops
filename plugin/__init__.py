@@ -39,7 +39,7 @@ def register(ctx) -> None:
         "Pitfalls and fixes for failing or misbehaving cron jobs.",
     )
     ctx.register_skill(
-        "cron-output-formatting",
-        Path(__file__).parent / "skills" / "cron-output-formatting" / "SKILL.md",
-        "Format cron list and run output for chat delivery.",
+        "cron-output-formatter",
+        Path(__file__).parent / "skills" / "cron-output-formatter" / "SKILL.md",
+        "Design and format user-facing cronjob responses for chat delivery.",
     )

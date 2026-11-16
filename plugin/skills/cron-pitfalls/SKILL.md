@@ -23,7 +23,7 @@ troubleshooting table for failures.
 
 Does not own: creation/editing/verification procedure — see
 `cron-job-creation`; schedule/flag/frequency recommendations — see
-`cron-job-standards`; chat output formatting — see `cron-output-formatting`.
+`cron-job-standards`; chat output formatting — see `cron-output-formatter`.
 
 ## Anti-Patterns
 
