@@ -3,7 +3,7 @@
 Four rejected reference outputs for `cron-output-formatter`. Each entry
 preserves the original text, the defect in it, and (where one exists) the
 corrected form. These classify against the raw annotations in
-`formatting-patterns.md` — where that file labels an example as good but
+`formatting-patterns.md` (repo root) — where that file labels an example as good but
 the final classification rejects it, this file is authoritative.
 
 ---
@@ -141,11 +141,6 @@ To stop or manage this job, send me a new message (e.g. "stop reminder kanban-wa
   with unrelated technical investigation (consent-screen Publishing
   status, project id), and never states what happens after the action
   (§Action needed rules).
-
-**Note:** this exact body also appears in the raw `formatting-patterns.md`
-file under its "good" list; the final classification rejects it. Use the
-status-grouped corrected form in `good-examples.md` → Kanban monitoring
-(approved) instead.
 
 ---
 

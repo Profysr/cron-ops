@@ -30,22 +30,6 @@ Does not own: creating, editing, or verifying jobs — `cron-job-creation`;
 anti-patterns and troubleshooting — `cron-pitfalls`; schedule/flag/frequency
 advice — `cron-job-standards`; cross-profile health — `cron-ops`.
 
-## Response Identity (envelope)
-
-Preserve the established cron response identity where applicable:
-
-```text
-Cronjob Response: <job name>
-(job_id: <id>)
--------------
-<body>
-
-To stop or manage this job, send me a new message (e.g. "stop reminder <job name>").
-```
-
-The header, job id, and management footer stay consistent across the fleet.
-The body is what this skill designs.
-
 ## Universal Principles
 
 1. **Signal over noise** — include information because it matters, not merely because the agent collected it.
@@ -61,7 +45,6 @@ The body is what this skill designs.
 11. **No configuration dumps** — don't repeatedly list unchanged settings, labels, disabled sources, or other persistent configuration.
 12. **No artificial sections** — don't add headings that have no meaningful content; omit empty sections.
 13. **Evidence-based reporting** — never invent success, progress, timestamps, metrics, or explanations.
-14. **Consistent identity** — preserve the response header, job id, and management footer.
 
 ## Presentation Levels
 
@@ -191,7 +174,6 @@ if needed. **Never include this checklist in the actual cron output.**
 - `references/good-examples.md` — approved outputs and why they work.
 - `references/bad-examples.md` — rejected outputs and the specific defect
   in each.
-- `references/formatting-patterns.md` — raw annotated source material.
 
 Read the reference examples before designing a new report shape. Preserve
 the lessons and distinctions in these examples — do not merely store the
@@ -204,7 +186,6 @@ names.
   repeated findings, no empty or artificial sections.
 - Statuses match the source output; timestamps and metrics come from the
   source output, never re-derived or invented.
-- The envelope (header, job id, management footer) is intact.
 - An `Action needed` section appears only when a human must act, and is
   direct and concise when present.
 - The silent quality check passed before delivery.
