@@ -200,7 +200,8 @@ def validate(expr: str, profiles, candidate_profile, at: datetime) -> dict[str, 
                 continue  # unusable schedule — doctor reports it, not validate
             if not occ:
                 continue
-            dur = estimate_duration(profile, str(job.get("id"))) or DEFAULT_DURATION
+            _dur_ms = estimate_duration(profile, str(job.get("id")))
+            dur = timedelta(milliseconds=_dur_ms) if _dur_ms is not None else DEFAULT_DURATION
             entries.append({
                 "profile": profile, "job": job, "zone": zone, "dur": dur, "occ": occ,
                 "info": {"job_id": str(job.get("id")), "name": str(job.get("name") or "?"),
