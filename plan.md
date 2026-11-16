@@ -198,6 +198,56 @@ Deferred per user instruction; listed so nothing is forgotten:
    installation instructions (prompt also asks for an Ubuntu manual-test pass — flag that the
    live stores here are Windows; Ubuntu results will differ).
 
+## Phase 03 — Deferred enhancements (work when time permits)
+
+Numbered to follow Phase 01 (validation report) and Phase 02 (testing /
+`UBUNTU-TESTING.md`). Both items reviewed 2026-11-16 against source; no code
+written yet — implementation starts here when time allows.
+
+### Limitation A — `doctor` does not inspect config.yaml or schema versions
+
+Enhancement gap in `manage.py doctor()` (verified: it sweeps only job state,
+failure streaks, delivery errors, missing/unreadable stores, duplicate ids).
+Two fixes, both read-only:
+
+1. **Config inspection** — read each profile's `config.yaml` through the
+   sanctioned reader `hermes_cli.config_backend.read_config_doc_readonly()`
+   (`hermes_cli/config_backend.py:406`; prefer the `_readonly` variant over
+   `read_config_doc()` since doctor must never touch write/migration paths).
+   - **Unexpected** cron keys (e.g. `catchup_missed` typo) → findings (exit 1).
+   - **Missing** `cron.timezone` / `cron.catch_up_missed` → informational notes
+     only, not findings: both have working defaults, and flagging them would
+     turn every default install red, poisoning CI trust in `doctor --ci`.
+2. **Schema field-presence probe** — call `list_jobs()` / `list_executions()`
+   once per profile and verify expected fields (`id`, `schedule`,
+   `next_run_at`, `status`). Missing fields → "schema surprise" finding
+   (canary for a Hermes field rename), worded as drift, not corruption.
+   Probe once per profile, never per row.
+
+Scope: ~30–60 lines in `plugin/manage.py` + configurable config stub in
+`tests/support.py` + doctor tests in `tests/test_manage.py`. Afterwards remove
+the matching bullet from `UBUNTU-TESTING.md` §7 (known limitations).
+
+### Limitation B — `usage_audit.jsonl` has no read API
+
+Verified: writer-only in `cron/scheduler.py` (`_write_usage_audit`, line 1254);
+zero readers anywhere in Hermes core. Current design stays as-is:
+
+- **Short term (accepted):** keep the read-only streaming pass in
+  `metrics.py:_usage_records()` with per-row `usage_match {method, delta_s,
+  confidence}` + `unmatched_usage_records`. A heuristic is never shown as
+  exact.
+- **Real fix (external):** request a sanctioned read API upstream in Hermes
+  core — a `read_usage_audit()`-style reader, or a `hermes cron runs --json`
+  export — turning an undocumented side-channel into a stable contract.
+- **Fallback (already built):** missing/unreadable file → tokens unknown,
+  `usage_match: null`, unmatched counted. Do not drop the audit read entirely;
+  it would discard token/model data that is available.
+- **Watch item:** after any Hermes upgrade, check `unmatched_usage_records`
+  drift — a jump means the record shape changed silently.
+
+Local code work for B: none required; only the upstream request is real work.
+
 ---
 
 ## Estimated sizes
@@ -209,6 +259,8 @@ Deferred per user instruction; listed so nothing is forgotten:
 | 4 Validation | 1–1.5 d | 250 |
 | 5 Management/doctor | 0.5 d | 120 |
 | 6 Tests | 0.5 d | 250 |
+| Phase 03 Limitation A (doctor config/schema) | 0.5 d | 40–60 |
+| Phase 03 Limitation B (usage-audit API) | external | 0 local |
 
 ## Out of scope (v1)
 CPU/RAM sampling (v1.1), cron *creation* via `cronops` (use native `hermes cron create`), any
