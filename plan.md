@@ -200,9 +200,10 @@ Deferred per user instruction; listed so nothing is forgotten:
 
 ## Phase 03 — Deferred enhancements (work when time permits)
 
-Numbered to follow Phase 01 (validation report) and Phase 02 (testing /
-`UBUNTU-TESTING.md`). Both items reviewed 2026-11-16 against source; no code
-written yet — implementation starts here when time allows.
+Numbered to follow Phase 01 (validation report) and Phase 02 (testing — the
+verification plan now lives in `README.md`). Both items reviewed 2026-11-16
+against source; no code written yet — implementation starts here when time
+allows.
 
 ### Limitation A — `doctor` does not inspect config.yaml or schema versions
 
@@ -226,7 +227,7 @@ Two fixes, both read-only:
 
 Scope: ~30–60 lines in `plugin/manage.py` + configurable config stub in
 `tests/support.py` + doctor tests in `tests/test_manage.py`. Afterwards remove
-the matching bullet from `UBUNTU-TESTING.md` §7 (known limitations).
+the matching bullet from `README.md` § Known limitations.
 
 ### Limitation B — `usage_audit.jsonl` has no read API
 
