@@ -23,3 +23,23 @@ def register(ctx) -> None:
         "Validate a cron schedule against all Hermes profiles before creating a job; "
         "review cross-profile cron health with the cronops CLI.",
     )
+    ctx.register_skill(
+        "cron-job-creation",
+        Path(__file__).parent / "skills" / "cron-job-creation" / "SKILL.md",
+        "Create, edit, and verify Hermes cron jobs end-to-end.",
+    )
+    ctx.register_skill(
+        "cron-job-standards",
+        Path(__file__).parent / "skills" / "cron-job-standards" / "SKILL.md",
+        "Recommendations for cron schedules, flags, and frequency.",
+    )
+    ctx.register_skill(
+        "cron-pitfalls",
+        Path(__file__).parent / "skills" / "cron-pitfalls" / "SKILL.md",
+        "Pitfalls and fixes for failing or misbehaving cron jobs.",
+    )
+    ctx.register_skill(
+        "cron-output-formatting",
+        Path(__file__).parent / "skills" / "cron-output-formatting" / "SKILL.md",
+        "Format cron list and run output for chat delivery.",
+    )

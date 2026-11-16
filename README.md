@@ -29,7 +29,9 @@ plugin/
   validate.py          # cron overlap math (croniter)
   metrics.py           # execution/usage summaries
   manage.py            # inspect + mutations (shells out to `hermes cron ...`)
-  skills/cron-ops/     # bundled agent skill: when to validate before creating jobs
+  skills/                # bundled agent skills: cron-ops (cronops CLI),
+                         # cron-job-creation, cron-job-standards,
+                         # cron-pitfalls, cron-output-formatting
 ```
 
 ## Design rules
